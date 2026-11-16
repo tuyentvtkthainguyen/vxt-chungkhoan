@@ -5,7 +5,7 @@
   let META = null;
   const cache = new Map();
   const get = async url => { const r = await fetch(url + "?v=" + Math.floor(Date.now() / 60000), { cache: "no-store" }); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); };
-  const fmtTime = ts => new Date(ts * 1000).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  const fmtTime = ts => new Date(ts * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 
   async function loadMeta() {
     try {

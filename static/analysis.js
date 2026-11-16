@@ -125,7 +125,10 @@
     const c = C[i], cp = C[p];
     const a = A[i] || (H[i] - L[i]) || c * 0.02;
     const chg = c - cp, chgPct = (chg / cp) * 100;
-    const volRatio = vAvg[p] ? V[i] / vAvg[p] : 1;
+    // Phiên đang diễn ra: ước tính khối lượng cả phiên theo thời gian đã giao dịch
+    const partial = opt.partial > 0 && opt.partial < 1 ? opt.partial : 1;
+    const vNow = V[i] / Math.max(partial, 0.15);
+    const volRatio = vAvg[p] ? vNow / vAvg[p] : 1;
     const value20 = (() => { let s = 0, k = 0; for (let j = Math.max(0, n - 20); j < n; j++) { s += C[j] * V[j]; k++; } return s / k / 1e6; })(); // tỷ đồng
     const hi20 = maxOf(H, Math.max(0, n - 21), n - 1), lo20 = minOf(L, Math.max(0, n - 21), n - 1);
     const reasons = [], warns = [];
@@ -180,6 +183,7 @@
     if (stretch > 2.5) add(-1, `Giá đã cách EMA20 ${stretch.toFixed(1)} ATR, tránh mua đuổi`);
     // Thanh khoản
     if (!isIndex && value20 < 3) warns.push(`Thanh khoản thấp (${value20.toFixed(1)} tỷ/phiên), khó mua bán khối lượng lớn`);
+    if (partial < 1) warns.push(`Phiên đang diễn ra (${Math.round(partial * 100)}% thời gian): khối lượng là ước tính cả phiên, tín hiệu chốt khi đóng cửa`);
     if (!isIndex && Math.abs(chgPct) >= 6.5) warns.push("Biến động gần biên độ trần/sàn");
 
     let signal, cls;

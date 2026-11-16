@@ -62,6 +62,15 @@
     if (m < 900) return "Thỏa thuận";
     return "Đã đóng cửa";
   }
+  /* Tỷ lệ thời gian phiên đã trôi qua nếu nến cuối là phiên hôm nay (9:00-11:30, 13:00-14:45) */
+  function partialOf(candles) {
+    const d = vnNow(), last = candles[candles.length - 1];
+    const ld = new Date((last.t + 25200) * 1000);
+    if (ld.getUTCFullYear() !== d.getFullYear() || ld.getUTCMonth() !== d.getMonth() || ld.getUTCDate() !== d.getDate()) return 1;
+    const m = d.getHours() * 60 + d.getMinutes();
+    const done = Math.max(0, Math.min(m, 690) - 540) + Math.max(0, Math.min(m, 885) - 780);
+    return Math.min(1, done / 255);
+  }
   function tickClock() {
     const d = vnNow();
     $("#clock").textContent = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) + " · " + session();
@@ -71,7 +80,7 @@
   async function loadMarket() {
     try {
       const j = await getHist("VNINDEX", 760);
-      const a = TA.analyze(j.candles, { isIndex: true });
+      const a = TA.analyze(j.candles, { isIndex: true, partial: partialOf(j.candles) });
       if (!a.ok) throw new Error(a.reason);
       const state = a.cls.startsWith("buy") ? ["Tích cực", "up"] : a.cls === "sell" ? ["Tiêu cực – hạn chế giải ngân", "down"] : ["Trung tính", "ref"];
       $("#market").innerHTML = `VN-Index <b class="${cls(a.chg)}">${fmt(a.last)}</b>
@@ -107,7 +116,7 @@
         const sym = queue.shift();
         try {
           const j = await getHist(sym, 760);
-          const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE" });
+          const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE", partial: partialOf(j.candles) });
           S.results[sym] = a.ok ? { sym, ...a, source: j.source } : { sym, err: a.reason };
         } catch (e) { S.results[sym] = { sym, err: e.message }; }
         done++; prog(); renderTable();
@@ -157,7 +166,7 @@
     $("#detailHead").innerHTML = `<p class="muted">Đang tải ${sym}…</p>`;
     try {
       const j = await getHist(sym, 760);
-      const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE", isIndex: isIndex(sym) });
+      const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE", isIndex: isIndex(sym), partial: partialOf(j.candles) });
       if (!a.ok) throw new Error(a.reason);
       S.curData = { sym, candles: j.candles, a, source: j.source };
       renderDetail(); drawChart();
@@ -344,7 +353,7 @@
     if (!ts) return "";
     const m = Math.round((Date.now() / 1000 - ts) / 60);
     if (m < 60) return m + " phút trước"; if (m < 1440) return Math.round(m / 60) + " giờ trước";
-    return new Date(ts * 1000).toLocaleDateString("vi-VN");
+    return new Date(ts * 1000).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
   }
   function newsHtml(n) {
     const sTag = n.sent > 0 ? `<span class="tag buy2">+</span> ` : n.sent < 0 ? `<span class="tag sell">−</span> ` : "";
