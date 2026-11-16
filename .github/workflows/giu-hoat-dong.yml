@@ -1,0 +1,20 @@
+name: Giữ lịch tự chạy hoạt động
+# GitHub tắt lịch tự chạy nếu kho không có commit trong 60 ngày. Việc này commit 1 file nhỏ mỗi tháng.
+on:
+  schedule:
+    - cron: "0 1 1 * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%Y-%m-%d > .github/keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "Giữ lịch tự chạy hoạt động" || exit 0
+          git push

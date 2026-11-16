@@ -1,0 +1,80 @@
+  <section id="tab-home" class="tab active">
+    <div class="hero">
+      <div class="hero-txt">
+        <div class="pill">Công cụ phân tích kỹ thuật cổ phiếu Việt Nam</div>
+        <h1>Quét mã, đọc tin và tìm<br><span class="grad">điểm vào – ra</span> cho từng cổ phiếu</h1>
+        <p class="lead">VXT Chứng Khoán chấm điểm từng mã theo xu hướng, động lượng, khối lượng và bứt phá nền. Mỗi mã có sẵn vùng mua, cắt lỗ, mục tiêu đã làm tròn theo bước giá sàn HOSE/HNX.</p>
+        <div class="cta">
+          <button class="primary big" data-go="demo">Dùng thử ngay</button>
+          <button class="big" data-go="import">Nhập dữ liệu thật</button>
+          <button class="big" data-go="get">Bản đầy đủ (giá trực tiếp)</button>
+        </div>
+      </div>
+      <svg class="hero-art" viewBox="0 0 320 200" aria-hidden="true">
+        <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#1fbf75" stop-opacity=".35"/><stop offset="1" stop-color="#1fbf75" stop-opacity="0"/></linearGradient></defs>
+        <rect x="0" y="0" width="320" height="200" rx="14" fill="#161b22" stroke="#2a3342"/>
+        <path d="M20 150 L60 130 L90 140 L130 100 L160 112 L200 70 L230 82 L270 45 L300 52 L300 185 L20 185Z" fill="url(#g1)"/>
+        <path d="M20 150 L60 130 L90 140 L130 100 L160 112 L200 70 L230 82 L270 45 L300 52" stroke="#1fbf75" stroke-width="3" fill="none"/>
+        <line x1="20" x2="300" y1="120" y2="120" stroke="#3b82f6" stroke-dasharray="5 4"/>
+        <line x1="20" x2="300" y1="160" y2="160" stroke="#f0506e" stroke-dasharray="5 4"/>
+        <rect x="230" y="20" width="70" height="22" rx="5" fill="rgba(31,191,117,.2)"/><text x="265" y="35" fill="#1fbf75" font-size="12" font-weight="700" text-anchor="middle">MUA +6</text>
+      </svg>
+    </div>
+    <div class="feat">
+      <div class="card"><h3>📊 Quét cả danh mục</h3><p>VN30, ngân hàng, chứng khoán, BĐS, thép, dầu khí… hoặc tự nhập mã. Lọc theo tín hiệu, sắp xếp theo điểm, RSI, khối lượng.</p></div>
+      <div class="card"><h3>🎯 Điểm vào – ra rõ ràng</h3><p>Vùng mua, cắt lỗ (rủi ro tối đa ~8%), mục tiêu T1/T2 theo kháng cự và R:R, cảnh báo thoát hàng cho người đang giữ cổ phiếu.</p></div>
+      <div class="card"><h3>📈 Biểu đồ kỹ thuật</h3><p>Nến, EMA20/50/200, Bollinger, RSI, khối lượng, hỗ trợ – kháng cự, kèm lý do chấm điểm từng tiêu chí.</p></div>
+      <div class="card"><h3>📰 Tin tức & nhận định</h3><p>Bản đầy đủ gom tin CafeF, Vietstock, VnExpress, tự gắn mã. Bản web có nút hỏi Claude nhận định từ chỉ số kỹ thuật.</p></div>
+    </div>
+    <div class="card prose">
+      <h3>Hai cách dùng</h3>
+      <div class="grid2">
+        <div><b>1. Ngay trên trang này</b><p class="muted">Chạy được trên điện thoại. Dùng <b>dữ liệu mẫu</b> để làm quen, hoặc <b>nhập file CSV</b> giá lịch sử (tải từ CafeF, Vietstock, AmiBroker, phần mềm công ty chứng khoán) để phân tích số liệu thật. Trang này không tự tải giá trực tiếp.</p></div>
+        <div><b>2. Bản đầy đủ chạy trên máy tính</b><p class="muted">Tự lấy giá từ VNDirect / TCBS / SSI và tin tức trực tiếp, quét lại mỗi 5 phút. Cần Python, không cài thêm gì. <a href="#" data-go="get">Xem cách tải →</a></p></div>
+      </div>
+      <p class="warn small">Công cụ hỗ trợ phân tích kỹ thuật, không phải khuyến nghị đầu tư. Không tài khoản, không thu thập dữ liệu của bạn.</p>
+    </div>
+  </section>
+
+  <section id="tab-import" class="tab">
+    <div class="card">
+      <h3>Nhập dữ liệu giá thật (CSV)</h3>
+      <p class="muted">Nhận các dạng phổ biến: có tiêu đề <code>Ticker,Date,Open,High,Low,Close,Volume</code> (hoặc tiếng Việt: Mã, Ngày, Giá mở cửa, Giá cao nhất, Giá thấp nhất, Giá đóng cửa, Khối lượng), dạng AmiBroker không tiêu đề, ngày dạng 2026-11-14, 14/11/2026 hoặc 20261114. Một file có thể chứa nhiều mã. Giá đơn vị đồng sẽ tự đổi sang nghìn đồng.</p>
+      <div class="toolbar">
+        <input id="impSym" placeholder="Mã (nếu file không có cột Mã)" maxlength="12" style="max-width:230px">
+        <label class="button primary">Chọn file CSV<input type="file" id="impFile" accept=".csv,.txt,text/csv" multiple hidden></label>
+      </div>
+      <textarea id="impPaste" rows="6" placeholder="…hoặc dán nội dung CSV vào đây"></textarea>
+      <div class="toolbar" style="margin-top:8px">
+        <button id="impPasteBtn" class="primary">Nhập dữ liệu dán</button>
+        <button id="impSample">Điền ví dụ</button>
+        <button id="impClear">Xóa dữ liệu đã nhập</button>
+      </div>
+      <p id="impMsg"></p>
+      <p><b>Đã nhập (<span id="impCount">0</span>):</b> <span id="impList"></span></p>
+      <p class="muted small">Dữ liệu chỉ nằm trong trình duyệt của bạn, không gửi đi đâu. Nhập thêm mã VNINDEX để xem xu hướng thị trường. Cần ít nhất 35 phiên, nên có 200+ phiên để tính EMA200.</p>
+    </div>
+  </section>
+
+  <section id="tab-get" class="tab">
+    <div class="card prose">
+      <h3>Bản đầy đủ chạy trên máy tính</h3>
+      <p>Bản đầy đủ tự lấy giá trực tiếp (VNDirect → TCBS → SSI, tự chuyển nguồn khi lỗi), tổng hợp tin tức RSS và quét lại tự động. Bản này chỉ chạy trên máy bạn, không thu thập dữ liệu.</p>
+      <button id="dlBtn" class="primary big">Tải VXT-ChungKhoan.zip</button> <span id="dlNote" class="muted small"></span>
+      <ol>
+        <li>Cài Python 3.8+ từ python.org (Windows: tick “Add Python to PATH”).</li>
+        <li>Giải nén file zip.</li>
+        <li>Windows: bấm đúp <code>CHAY_WINDOWS.bat</code> · macOS/Linux: chạy <code>./chay_mac_linux.sh</code>.</li>
+        <li>Trình duyệt tự mở <code>http://127.0.0.1:8686</code>.</li>
+      </ol>
+      <h3>Chạy trên VPS – truy cập bằng link từ điện thoại</h3>
+      <p>Đưa app lên VPS để có trang riêng như <code>https://ck.tenmien.vn</code>, tự lấy giá và tin trực tiếp, có khóa mật khẩu. Nên chọn VPS đặt tại Việt Nam vì một số nguồn dữ liệu có thể chặn IP nước ngoài.</p>
+      <ol>
+        <li>Chép thư mục <code>VXT-ChungKhoan</code> lên VPS Ubuntu (WinSCP hoặc <code>scp</code>).</li>
+        <li>SSH vào VPS, chạy <code>sudo bash deploy/cai_dat_vps.sh ck.tenmien.vn</code> (bỏ tên miền nếu chỉ dùng IP).</li>
+        <li>Nhập mật khẩu khóa trang khi được hỏi. Script tự cài Nginx, dịch vụ tự khởi động, HTTPS miễn phí.</li>
+        <li>Mở link script in ra, đăng nhập bằng tên bất kỳ và mật khẩu vừa đặt.</li>
+      </ol>
+      <p class="muted small">Có sẵn Dockerfile/docker-compose nếu bạn dùng Docker. Chi tiết trong HUONG_DAN.txt.</p>
+    </div>
+  </section>

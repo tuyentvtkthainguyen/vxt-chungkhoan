@@ -1,0 +1,19 @@
+[Unit]
+Description=VXT Chung Khoan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=vxt
+EnvironmentFile=/etc/vxt-chungkhoan.env
+WorkingDirectory=/opt/vxt-chungkhoan
+ExecStart=/usr/bin/python3 /opt/vxt-chungkhoan/server.py --no-browser
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

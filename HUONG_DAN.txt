@@ -1,0 +1,64 @@
+VXT CHỨNG KHOÁN - Quét mã, tin tức, định hướng vào/ra
+=====================================================
+
+CÀI ĐẶT
+1. Cần Python 3.8 trở lên (https://www.python.org/downloads/ - Windows nhớ tick "Add Python to PATH").
+   Không cần cài thêm thư viện nào.
+2. Windows: bấm đúp CHAY_WINDOWS.bat
+   macOS/Linux: chạy ./chay_mac_linux.sh
+3. Trình duyệt tự mở http://127.0.0.1:8686  (đổi cổng: đặt biến môi trường VXT_PORT)
+
+CHỨC NĂNG
+- Quét mã: chọn nhóm ngành có sẵn hoặc tự nhập mã (FPT, HPG...), app tính EMA20/50/200,
+  RSI, MACD, ATR, khối lượng, bứt phá nền -> chấm điểm -> MUA / MUA THĂM DÒ / THEO DÕI / BÁN.
+- Mỗi mã có vùng mua, cắt lỗ, mục tiêu T1/T2 (làm tròn theo bước giá), tín hiệu thoát hàng.
+- Chi tiết mã: biểu đồ nến + EMA + RSI + khối lượng, hỗ trợ/kháng cự, lý do chấm điểm.
+- Tin tức: tổng hợp RSS CafeF, Vietstock, VnExpress, Tin nhanh CK; tự gắn mã cổ phiếu được nhắc tới.
+- Tự quét lại mỗi 5 phút (tùy chọn). Hiển thị trạng thái phiên giao dịch giờ Việt Nam.
+
+NGUỒN DỮ LIỆU
+- Giá: VNDirect -> TCBS -> SSI (nguồn đầu lỗi thì tự chuyển nguồn sau).
+  Đây là API công khai không chính thức, các công ty có thể đổi bất cứ lúc nào.
+  Nếu một nguồn hỏng, sửa hàm src_... trong server.py.
+- Bật "Dữ liệu mẫu" để thử giao diện khi không có mạng (số liệu giả lập, KHÔNG dùng để giao dịch).
+
+QUYỀN RIÊNG TƯ
+- Chỉ chạy trên máy bạn (127.0.0.1), không tài khoản, không thu thập hay gửi dữ liệu cá nhân.
+
+LƯU Ý
+- Công cụ hỗ trợ phân tích kỹ thuật, KHÔNG phải khuyến nghị đầu tư.
+- Danh sách VN30 và nhóm ngành là tham khảo, hãy tự cập nhật theo kỳ cơ cấu.
+
+=====================================================
+CHẠY TRÊN VPS / MÁY CHỦ WEB (truy cập bằng link từ mọi nơi)
+=====================================================
+Khuyên dùng VPS đặt tại Việt Nam (Viettel IDC, VNPT, FPT, BizFly, Vietnix...).
+Một số nguồn dữ liệu chứng khoán VN có thể chặn IP máy chủ nước ngoài.
+Cấu hình nhỏ nhất là đủ: 1 CPU, 1 GB RAM, Ubuntu 22.04/24.04.
+
+CÁCH 1 - Tự động (Ubuntu/Debian):
+  1. Chép thư mục VXT-ChungKhoan lên VPS (WinSCP hoặc: scp -r VXT-ChungKhoan root@IP-VPS:/root/)
+  2. SSH vào VPS:  cd /root/VXT-ChungKhoan
+  3. Không có tên miền:  sudo bash deploy/cai_dat_vps.sh
+     Có tên miền (đã trỏ bản ghi A về IP VPS):  sudo bash deploy/cai_dat_vps.sh ck.tenmien.vn
+  4. Script hỏi mật khẩu khóa trang -> nhập (nên đặt, để người lạ không dùng được).
+  5. Mở link script in ra: http://IP-VPS  hoặc  https://ck.tenmien.vn
+     Đăng nhập: tên bất kỳ + mật khẩu đã đặt.
+  Lệnh quản lý: systemctl restart|status vxt-chungkhoan ; journalctl -u vxt-chungkhoan -n 50
+  Đổi mật khẩu: sửa /etc/vxt-chungkhoan.env rồi systemctl restart vxt-chungkhoan
+  Cập nhật bản mới: chép server.py, static/ vào /opt/vxt-chungkhoan rồi restart.
+
+CÁCH 2 - Docker (VPS có sẵn Docker, hoặc dịch vụ chạy container):
+  Sửa mật khẩu trong docker-compose.yml rồi:  docker compose up -d --build
+  Truy cập: http://IP-VPS:8686  (nên đặt Nginx/HTTPS phía trước).
+
+CÁCH 3 - Chạy tay:
+  VXT_PASSWORD=matkhau python3 server.py --host 0.0.0.0 --port 8686
+
+BIẾN MÔI TRƯỜNG
+  VXT_PASSWORD  mật khẩu khóa trang (trống = không khóa)
+  VXT_HOST / VXT_PORT  địa chỉ, cổng nghe
+  VXT_RATE      số lần gọi API tối đa mỗi phút mỗi người (mặc định 240)
+  VXT_LOG=1     bật nhật ký truy cập (mặc định TẮT: không lưu IP người dùng)
+Kiểm tra nguồn dữ liệu trên VPS:
+  curl -u x:MATKHAU "http://127.0.0.1:8686/api/history?symbol=FPT&days=100"
