@@ -25,6 +25,7 @@ import urllib.request
 import webbrowser
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
+from concurrent.futures import ThreadPoolExecutor
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = os.environ.get("VXT_HOST", "127.0.0.1")
@@ -50,7 +51,10 @@ NEWS_FEEDS = [
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh/chung-khoan.rss"),
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh.rss"),
     ("Tin nhanh CK", "https://www.tinnhanhchungkhoan.vn/rss/chung-khoan-1.rss"),
+    ("Vietstock · GD nội bộ", "https://vietstock.vn/739/chung-khoan/thong-tin-cong-bo.rss"),
+    ("Vietstock · Cổ tức", "https://vietstock.vn/738/chung-khoan/co-tuc.rss"),
 ]
+CBTT_SOURCES = {"Vietstock · GD nội bộ", "Vietstock · Cổ tức"}
 
 _cache = {}
 _cache_lock = threading.Lock()
@@ -233,7 +237,8 @@ def parse_rss(source, raw):
         except Exception:  # noqa: BLE001
             pass
         if title and link.startswith("http"):
-            items.append({"title": title, "link": link, "desc": desc, "ts": ts, "source": source})
+            items.append({"title": title, "link": link, "desc": desc, "ts": ts, "source": source,
+                          "cat": "cbtt" if source in CBTT_SOURCES else "tin"})
     return items
 
 
@@ -282,6 +287,139 @@ def get_news(demo=False):
     if items:
         cache_set(("news", demo), res)
     return res
+
+
+# ----------------------- Dòng tiền khối ngoại & cơ bản ----------------------
+
+SSI_GROUPS = ["VN30", "HOSE", "HNX", "UPCOM", "VNINDEX", "HNXIndex", "HNXUpcomIndex"]
+
+
+def _vn_today():
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() + 7 * 3600))
+
+
+def foreign_today(symbols):
+    """Khối ngoại mua/bán trong phiên gần nhất (SSI iBoard). Giá trị: tỷ đồng."""
+    want = {s for s in symbols if s not in INDEXES}
+    out = {}
+
+    def take(d):
+        sym = d.get("stockSymbol")
+        if sym not in want or sym in out:
+            return
+        bv, sv = d.get("buyForeignValue"), d.get("sellForeignValue")
+        if bv is None or sv is None:
+            return
+        td = str(d.get("tradingDate") or "")
+        date = f"{td[:4]}-{td[4:6]}-{td[6:8]}" if len(td) == 8 else _vn_today()
+        out[sym] = {"date": date, "buy": round(bv / 1e9, 3), "sell": round(sv / 1e9, 3),
+                    "net": round((bv - sv) / 1e9, 3), "room": d.get("remainForeignQtty")}
+
+    for g in SSI_GROUPS:
+        if want <= set(out):
+            break
+        try:
+            j = json.loads(http_get(f"https://iboard-query.ssi.com.vn/stock/group/{g}", timeout=20,
+                                    referer="https://iboard.ssi.com.vn/"))
+            for d in j.get("data") or []:
+                take(d)
+        except Exception:  # noqa: BLE001
+            pass
+    for sym in sorted(want - set(out)):
+        try:
+            j = json.loads(http_get(f"https://iboard-query.ssi.com.vn/stock/{sym}", timeout=10,
+                                    referer="https://iboard.ssi.com.vn/"))
+            take(j.get("data") or {})
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def fundamentals(sym):
+    """Chỉ số tài chính theo quý (TTM) từ Vietcap. Tăng trưởng LNST = LNST 4 quý gần nhất so với cùng kỳ."""
+    j = json.loads(http_get(f"https://iq.vietcap.com.vn/api/iq-insight-service/v1/company/{sym}/statistics-financial",
+                            timeout=20, referer="https://trading.vietcap.com.vn/"))
+    rows = [r for r in (j.get("data") or []) if 1 <= int(r.get("quarter") or 0) <= 4]
+    rows.sort(key=lambda r: (int(r.get("yearReport") or 0), int(r["quarter"])))
+    if not rows:
+        raise ValueError("không có dữ liệu")
+    last = rows[-1]
+
+    def ni(r):  # LNST 4 quý = vốn hóa / P/E
+        try:
+            return r["marketCap"] / r["pe"] if r.get("pe") else None
+        except (TypeError, ZeroDivisionError):
+            return None
+
+    growth = None
+    if len(rows) >= 5:
+        a, b = ni(last), ni(rows[-5])
+        if a is not None and b and b > 0:
+            growth = (a / b - 1) * 100
+    pct = lambda v: round(v * 100, 2) if isinstance(v, (int, float)) else None
+    num = lambda v, k=2: round(v, k) if isinstance(v, (int, float)) else None
+    return {"q": f"Q{last['quarter']}/{last.get('yearReport')}", "pe": num(last.get("pe")), "pb": num(last.get("pb")),
+            "ps": num(last.get("ps")), "roe": pct(last.get("roe")), "roa": pct(last.get("roa")),
+            "gm": pct(last.get("grossMargin")), "npm": pct(last.get("afterTaxProfitMargin")),
+            "de": num(last.get("debtToEquity")), "mc": num((last.get("marketCap") or 0) / 1e9, 0),
+            "dy": pct(last.get("dividendYield")), "npGrowth": num(growth, 1)}
+
+
+def merge_flow(old, today):
+    """Gộp khối ngoại hôm nay vào lịch sử (giữ 40 phiên) và tính ròng 5/20 phiên."""
+    flow = {}
+    for sym in set(old) | set(today):
+        hist = dict((d, v) for d, v in (old.get(sym, {}).get("hist") or []))
+        t = today.get(sym)
+        if t:
+            hist[t["date"]] = t["net"]
+        h = sorted(hist.items())[-40:]
+        nets = [v for _, v in h]
+        flow[sym] = {"hist": h, "today": t or old.get(sym, {}).get("today"),
+                     "net5": round(sum(nets[-5:]), 2) if nets else None,
+                     "net20": round(sum(nets[-20:]), 2) if nets else None,
+                     "days": len(nets)}
+    return flow
+
+
+_flow_mem = {}
+
+
+def get_extra(symbols, demo=False):
+    key = ("extra", tuple(sorted(symbols)), demo)
+    hit = cache_get(key, 300)
+    if hit:
+        return hit
+    if demo:
+        rnd = random.Random(int(time.time() // 86400))
+        res = {"updated": int(time.time()), "flow": {}, "fund": {}}
+        for s in symbols:
+            if s in INDEXES:
+                continue
+            nets = [round(rnd.gauss(0, 8), 2) for _ in range(20)]
+            res["flow"][s] = {"hist": [[f"d{i}", v] for i, v in enumerate(nets)], "today": {"date": _vn_today(), "buy": 10, "sell": 10 - nets[-1], "net": nets[-1], "room": None},
+                              "net5": round(sum(nets[-5:]), 2), "net20": round(sum(nets), 2), "days": 20}
+            res["fund"][s] = {"q": "Q3/2026", "pe": round(rnd.uniform(5, 25), 1), "pb": round(rnd.uniform(0.8, 4), 2), "roe": round(rnd.uniform(5, 28), 1),
+                              "roa": round(rnd.uniform(1, 12), 1), "gm": 25.0, "npm": 10.0, "de": 0.8, "mc": 20000, "dy": 2.0, "npGrowth": round(rnd.uniform(-40, 60), 1), "ps": 1.2}
+        cache_set(key, res)
+        return res
+    global _flow_mem
+    _flow_mem = merge_flow(_flow_mem, foreign_today(symbols))
+    fund = {}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for s, f in zip(symbols, ex.map(lambda x: _safe(fundamentals, x), symbols)):
+            if f and s not in INDEXES:
+                fund[s] = f
+    res = {"updated": int(time.time()), "flow": {k: v for k, v in _flow_mem.items() if k in symbols}, "fund": fund}
+    cache_set(key, res)
+    return res
+
+
+def _safe(fn, *a):
+    try:
+        return fn(*a)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ------------------------------- HTTP --------------------------------------
@@ -377,6 +515,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(get_news(demo))
             except Exception as e:  # noqa: BLE001
                 return self.send_json({"items": [], "errors": [str(e)]}, 502)
+        if u.path == "/api/extra":
+            syms = [x for x in q.get("symbols", [""])[0].upper().split(",") if SYMBOL_RE.match(x)][:150]
+            try:
+                return self.send_json(get_extra(syms, demo))
+            except Exception as e:  # noqa: BLE001
+                return self.send_json({"error": str(e)}, 502)
         if u.path == "/api/ping":
             return self.send_json({"ok": True, "time": int(time.time())})
         return super().do_GET()

@@ -40,6 +40,7 @@
       <button class="chip" data-f="hold">Theo dõi</button>
       <button class="chip" data-f="sell">Bán/Đứng ngoài</button>
       <button class="chip" data-f="news">Có tin</button>
+      <button class="chip" data-f="prob">XS tăng ≥ 60%</button>
       <span id="progress" class="muted"></span>
     </div>
     <div class="tablewrap">
@@ -47,7 +48,7 @@
         <thead><tr>
           <th data-k="sym">Mã</th><th data-k="last">Giá</th><th data-k="chgPct">%</th>
           <th data-k="score">Tín hiệu</th><th data-k="rsi">RSI</th><th data-k="volRatio">KL/TB20</th>
-          <th data-k="value20">GTGD TB (tỷ)</th><th>Vùng mua</th><th>Cắt lỗ</th><th>Mục tiêu</th><th data-k="news">Tin</th>
+          <th data-k="value20">GTGD TB (tỷ)</th><th data-k="fnet" title="Khối ngoại mua – bán phiên gần nhất">KN ròng (tỷ)</th><th data-k="p10" title="Tỷ lệ tăng sau 10 phiên ở các lần tín hiệu tương tự trong quá khứ">XS tăng 10p</th><th>Vùng mua</th><th>Cắt lỗ</th><th>Mục tiêu</th><th data-k="news">Tin</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -71,6 +72,8 @@
       <div class="card" id="planCard"></div>
       <div class="card" id="reasonCard"></div>
     </div>
+    <div class="card" id="btCard"></div>
+    <div class="card" id="extCard"></div>
     <div class="card" id="symNews"></div>
   </section>
 
@@ -79,6 +82,7 @@
     <div class="toolbar">
       <input id="newsQ" placeholder="Lọc theo mã hoặc từ khóa…">
       <label class="muted"><input type="checkbox" id="newsWatch"> Chỉ tin có mã trong danh mục</label>
+      <label class="muted"><input type="checkbox" id="newsCbtt"> Chỉ tin công bố (GD nội bộ, cổ tức)</label>
       <button id="btnNews">Làm mới</button>
       <span id="newsInfo" class="muted small"></span>
     </div>
@@ -98,6 +102,13 @@
         <li><b>Không mua đuổi</b>: giá cách EMA20 quá 2,5 ATR (−1).</li>
       </ul>
       <p>Tổng điểm ≥ 5: <span class="tag buy">MUA</span> · 3–4: <span class="tag buy2">MUA THĂM DÒ</span> · −2…2: <span class="tag hold">THEO DÕI</span> · ≤ −3: <span class="tag sell">BÁN / ĐỨNG NGOÀI</span></p>
+      <h3>Dữ liệu bổ sung</h3>
+      <ul>
+        <li><b>Khối ngoại</b> (SSI iBoard): mua ròng 5 phiên ≥ 30% GTGD TB một phiên (+1), bán ròng tương tự (−1). Lịch sử được tích lũy dần mỗi ngày.</li>
+        <li><b>Cơ bản</b> (Vietcap, 4 quý gần nhất): LNST tăng ≥ 20% so cùng kỳ (+1), giảm ≥ 20% (−1); ROE ≥ 20% và P/E &lt; 15 (+1); P/E âm: cảnh báo lỗ.</li>
+        <li><b>XS tăng 10p</b>: trong lịch sử của chính mã đó, những lần điểm kỹ thuật tương tự hôm nay thì bao nhiêu % số lần giá tăng sau 10 phiên. Cột “Mọi phiên” để so sánh: tín hiệu chỉ có giá trị khi tỷ lệ cao hơn rõ rệt. Cần ≥ 5 lần mới hiện.</li>
+        <li><b>Tin công bố</b>: giao dịch nội bộ, cổ tức (Vietstock).</li>
+      </ul>
       <h3>Điểm vào – ra</h3>
       <ul>
         <li><b>Vùng mua</b>: bứt phá → quanh nền vừa vượt; xu hướng tăng → nhịp chỉnh về EMA20; quá bán → thăm dò tỷ trọng nhỏ.</li>

@@ -30,7 +30,7 @@
 
   const S = {
     demo: store.get("demo", false), results: {}, filter: "all", sortK: "score", sortDir: -1,
-    news: [], cur: null, curData: null, zoom: 120, showBB: false, scanning: false, autoTimer: null,
+    news: [], extra: null, cand: {}, cur: null, curData: null, zoom: 120, showBB: false, scanning: false, autoTimer: null,
   };
 
   const fmt = (x, d = 2) => x == null || isNaN(x) ? "–" : (+x).toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -101,6 +101,28 @@
     return [...new Set([...custom, ...base])];
   }
 
+  /* Dữ liệu khối ngoại & cơ bản */
+  async function loadExtra(list) {
+    try {
+      S.extra = P && P.getExtra ? await P.getExtra(S.demo) :
+        await api(`/api/extra?symbols=${encodeURIComponent(list.filter(x => !isIndex(x)).join(","))}`);
+    } catch (e) { S.extra = S.extra || null; }
+    return S.extra;
+  }
+  function extraOf(sym) {
+    const x = S.extra; if (!x) return null;
+    const flow = x.flow && x.flow[sym], fund = x.fund && x.fund[sym];
+    return flow || fund ? { flow, fund } : null;
+  }
+  function analyzeSym(sym, candles, source) {
+    const a = TA.analyze(candles, { exchange: EXCH[sym] || "HOSE", isIndex: isIndex(sym), partial: partialOf(candles), extra: extraOf(sym) });
+    if (!a.ok) return { sym, err: a.reason };
+    const bt = TA.backtest(candles, a.techScore);
+    const s10 = bt && bt.same[1];
+    return { sym, ...a, source, bt, ext: extraOf(sym), p10: s10 && s10.n >= 5 ? s10.upPct : null, p10n: s10 ? s10.n : 0,
+      fnet: (() => { const e = extraOf(sym); return e && e.flow && e.flow.today ? e.flow.today.net : null; })() };
+  }
+
   async function scan() {
     if (S.scanning) return;
     const list = currentList();
@@ -111,18 +133,23 @@
     const prog = () => { $("#progress").innerHTML = `<span class="bar"><i style="width:${(done / list.length * 100).toFixed(0)}%"></i></span> ${done}/${list.length}`; };
     prog();
     const queue = [...list];
+    const extraP = loadExtra(list).then(() => {  // có dữ liệu khối ngoại/cơ bản thì chấm điểm lại
+      Object.keys(S.cand).forEach(sym => { if (S.results[sym] && !S.results[sym].err) S.results[sym] = analyzeSym(sym, S.cand[sym].c, S.cand[sym].src); });
+      renderTable();
+    });
     const worker = async () => {
       while (queue.length) {
         const sym = queue.shift();
         try {
           const j = await getHist(sym, 760);
-          const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE", partial: partialOf(j.candles) });
-          S.results[sym] = a.ok ? { sym, ...a, source: j.source } : { sym, err: a.reason };
+          S.cand[sym] = { c: j.candles, src: j.source };
+          S.results[sym] = analyzeSym(sym, j.candles, j.source);
         } catch (e) { S.results[sym] = { sym, err: e.message }; }
         done++; prog(); renderTable();
       }
     };
     await Promise.all([1, 2, 3, 4].map(worker));
+    await Promise.race([extraP, new Promise(r => setTimeout(r, 60000))]);
     S.scanning = false;
     const errs = Object.values(S.results).filter(r => r.err).length;
     $("#progress").textContent = `Xong ${list.length} mã lúc ${vnNow().toLocaleTimeString("vi-VN")}` + (errs ? ` · ${errs} mã lỗi` : "");
@@ -134,7 +161,7 @@
   function renderTable() {
     const rows = Object.values(S.results).map(r => ({ ...r, news: newsCount(r.sym) }));
     const f = S.filter;
-    const shown = rows.filter(r => f === "all" || (f === "news" ? r.news > 0 : !r.err && (f === "buy" ? r.cls.startsWith("buy") : r.cls === f)));
+    const shown = rows.filter(r => f === "all" || (f === "news" ? r.news > 0 : f === "prob" ? r.p10 >= 60 : !r.err && (f === "buy" ? r.cls.startsWith("buy") : r.cls === f)));
     const k = S.sortK, d = S.sortDir;
     shown.sort((a, b) => {
       if (a.err && !b.err) return 1; if (b.err && !a.err) return -1;
@@ -142,7 +169,7 @@
       if (typeof x === "string") return d * x.localeCompare(y);
       return d * ((x ?? -1e9) - (y ?? -1e9));
     });
-    $("#tbl tbody").innerHTML = shown.map(r => r.err ? `<tr data-s="${r.sym}"><td class="sym">${r.sym}</td><td colspan="10" style="text-align:left"><span class="tag err">Lỗi</span> <span class="muted small">${esc(r.err)}</span></td></tr>` : `
+    $("#tbl tbody").innerHTML = shown.map(r => r.err ? `<tr data-s="${r.sym}"><td class="sym">${r.sym}</td><td colspan="12" style="text-align:left"><span class="tag err">Lỗi</span> <span class="muted small">${esc(r.err)}</span></td></tr>` : `
       <tr data-s="${r.sym}">
         <td class="sym">${r.sym}</td>
         <td class="${cls(r.chg)}">${fmt(r.last)}</td>
@@ -151,6 +178,8 @@
         <td class="${r.rsi > 70 ? "down" : r.rsi < 30 ? "up" : ""}">${fmt(r.rsi, 0)}</td>
         <td class="${r.volRatio >= 1.5 ? "ref" : ""}">${fmt(r.volRatio, 1)}</td>
         <td>${fmt(r.value20, 1)}</td>
+        <td class="${cls(r.fnet)}">${r.fnet == null ? "–" : (r.fnet > 0 ? "+" : "") + fmt(r.fnet, 1)}</td>
+        <td class="${r.p10 == null ? "muted" : r.p10 >= 60 ? "up" : r.p10 <= 40 ? "down" : ""}" title="${r.p10n} lần tín hiệu tương tự">${r.p10 == null ? "–" : fmt(r.p10, 0) + "%"}<span class="score">${r.p10n ? "n" + r.p10n : ""}</span></td>
         <td>${r.plan ? fmt(r.plan.entryLo) + " – " + fmt(r.plan.entryHi) : `<span class="muted small">chờ > ${fmt(r.trigger)}</span>`}</td>
         <td class="down">${r.plan ? fmt(r.plan.stop) : "–"}</td>
         <td class="up">${r.plan ? fmt(r.plan.t1) + " / " + fmt(r.plan.t2) : "–"}</td>
@@ -166,8 +195,11 @@
     $("#detailHead").innerHTML = `<p class="muted">Đang tải ${sym}…</p>`;
     try {
       const j = await getHist(sym, 760);
-      const a = TA.analyze(j.candles, { exchange: EXCH[sym] || "HOSE", isIndex: isIndex(sym), partial: partialOf(j.candles) });
-      if (!a.ok) throw new Error(a.reason);
+      if (!S.extra) await loadExtra([sym]);
+      else if (!P && !extraOf(sym) && !isIndex(sym)) { const keep = S.extra; await loadExtra([sym]); S.extra = { flow: { ...keep.flow, ...S.extra.flow }, fund: { ...keep.fund, ...S.extra.fund } }; }
+      const r = analyzeSym(sym, j.candles, j.source);
+      if (r.err) throw new Error(r.err);
+      const a = r;
       S.curData = { sym, candles: j.candles, a, source: j.source };
       renderDetail(); drawChart();
       if (P && P.onDetail) P.onDetail(S.curData);
@@ -216,7 +248,49 @@
         <div>GTGD TB 20 phiên</div><div>${fmt(a.value20, 1)} tỷ</div>
         <div>Đỉnh / đáy 20 phiên</div><div>${fmt(a.hi20)} / ${fmt(a.lo20)}</div></div>`;
     const items = S.news.filter(n => n.tickers.includes(sym)).slice(0, 15);
+    $("#btCard").innerHTML = btHtml(a);
+    $("#extCard").innerHTML = extHtml(sym, a);
     $("#symNews").innerHTML = `<h3>Tin liên quan ${sym}</h3>` + (items.length ? items.map(newsHtml).join("") : `<p class="muted">Chưa thấy tin nhắc tới ${sym} trong các nguồn RSS gần đây.</p>`);
+  }
+
+  function pctTxt(v, sign = true) { return v == null ? "–" : `<span class="${cls(v)}">${sign && v > 0 ? "+" : ""}${fmt(v, 1)}%</span>`; }
+  function btHtml(a) {
+    const b = a.bt;
+    if (!b) return `<h3>Xác suất theo lịch sử</h3><p class="muted">Chưa đủ dữ liệu (cần ≥ 120 phiên).</p>`;
+    const row = (s, base) => `<tr><td style="text-align:left">${s.h} phiên</td><td>${s.n}</td>
+      <td class="${s.upPct == null ? "" : s.upPct >= 60 ? "up" : s.upPct <= 40 ? "down" : ""}"><b>${s.upPct == null ? "–" : fmt(s.upPct, 0) + "%"}</b></td>
+      <td>${pctTxt(s.avgPct)}</td><td>${pctTxt(s.medPct)}</td><td class="muted">${base.upPct == null ? "–" : fmt(base.upPct, 0) + "%"} / ${pctTxt(base.avgPct)}</td></tr>`;
+    const few = b.same[1].n < 10;
+    return `<h3>Xác suất theo lịch sử của chính mã này</h3>
+      <p class="muted small">Những lần trước điểm kỹ thuật tương tự hôm nay (cùng nhóm “${a.signal}”, chênh ≤ 1 điểm) trong ${b.bars} phiên, mua ở giá đóng cửa:</p>
+      <div class="tablewrap"><table><thead><tr><th>Sau</th><th>Số lần</th><th>Tỷ lệ tăng</th><th>Lãi/lỗ TB</th><th>Trung vị</th><th>Mọi phiên (so sánh)</th></tr></thead>
+      <tbody>${b.same.map((s, k) => row(s, b.base[k])).join("")}</tbody></table></div>
+      <p style="margin:8px 0 0">Mô phỏng lệnh (cắt lỗ 2×ATR, mục tiêu 1,5R, giữ tối đa 20 phiên): chạm mục tiêu <b class="up">${b.trade.tpPct == null ? "–" : fmt(b.trade.tpPct, 0) + "%"}</b>,
+      chạm cắt lỗ <b class="down">${b.trade.slPct == null ? "–" : fmt(b.trade.slPct, 0) + "%"}</b>${b.trade.n ? `, còn lại hết hạn (${b.trade.n} lệnh)` : ""}.</p>
+      <p class="${few ? "warn" : "muted"} small">${few ? "Ít mẫu (< 10 lần): con số dễ sai lệch, chỉ tham khảo. " : ""}Thống kê quá khứ, chưa tính phí, thuế và trượt giá; không đảm bảo lặp lại.</p>`;
+  }
+  function extHtml(sym, a) {
+    const e = a.ext;
+    if (isIndex(sym)) return "";
+    if (!e) return `<h3>Khối ngoại & chỉ số cơ bản</h3><p class="muted">${S.extra ? "Nguồn chưa có dữ liệu cho mã này." : "Đang tải hoặc nguồn chưa phản hồi."}</p>`;
+    const f = e.flow, u = e.fund;
+    let h = `<h3>Khối ngoại & chỉ số cơ bản</h3><div class="grid2"><div><div class="kv">`;
+    if (f && f.today) h += `<div>KN mua / bán (${esc(f.today.date || "")})</div><div>${fmt(f.today.buy, 1)} / ${fmt(f.today.sell, 1)} tỷ</div>
+      <div>KN ròng phiên</div><div class="${cls(f.today.net)}">${f.today.net > 0 ? "+" : ""}${fmt(f.today.net, 1)} tỷ</div>`;
+    if (f && f.days >= 2) h += `<div>KN ròng ${Math.min(5, f.days)} phiên</div><div class="${cls(f.net5)}">${fmt(f.net5, 1)} tỷ</div>`;
+    if (f && f.days >= 10) h += `<div>KN ròng ${Math.min(20, f.days)} phiên</div><div class="${cls(f.net20)}">${fmt(f.net20, 1)} tỷ</div>`;
+    if (f && f.today && f.today.room != null) h += `<div>Room ngoại còn</div><div>${fmt(f.today.room, 0)} CP</div>`;
+    if (!f) h += `<div>Khối ngoại</div><div class="muted">chưa có</div>`;
+    h += `</div>${f && f.days < 5 ? `<p class="muted small">Lịch sử khối ngoại đang được tích lũy (${f.days} phiên).</p>` : ""}</div><div><div class="kv">`;
+    if (u) h += `<div>Kỳ báo cáo</div><div>${esc(u.q || "")}</div>
+      <div>P/E · P/B</div><div>${fmt(u.pe, 1)} · ${fmt(u.pb, 2)}</div>
+      <div>ROE · ROA</div><div>${fmt(u.roe, 1)}% · ${fmt(u.roa, 1)}%</div>
+      <div>LNST 4 quý so cùng kỳ</div><div>${pctTxt(u.npGrowth)}</div>
+      <div>Biên LN gộp · ròng</div><div>${fmt(u.gm, 1)}% · ${fmt(u.npm, 1)}%</div>
+      <div>Nợ / Vốn CSH</div><div>${fmt(u.de, 2)}</div>
+      <div>Vốn hóa</div><div>${fmt(u.mc, 0)} tỷ</div>`;
+    else h += `<div>Chỉ số cơ bản</div><div class="muted">chưa có</div>`;
+    return h + `</div></div></div><p class="muted small">Nguồn: khối ngoại SSI iBoard · chỉ số tài chính Vietcap (TTM). Ngân hàng không có biên LN gộp.</p>`;
   }
 
   /* ---------------- Biểu đồ (canvas, không dùng thư viện ngoài) ---------------- */
@@ -359,13 +433,13 @@
     const sTag = n.sent > 0 ? `<span class="tag buy2">+</span> ` : n.sent < 0 ? `<span class="tag sell">−</span> ` : "";
     return `<a class="news" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
       <div class="t">${sTag}${n.tickers.map(t => `<span class="symtag">${t}</span>`).join("")}${esc(n.title)}</div>
-      <div class="m">${esc(n.source)} · ${ago(n.ts)}</div>${n.desc ? `<div class="d">${esc(n.desc.slice(0, 220))}</div>` : ""}</a>`;
+      <div class="m">${n.cat === "cbtt" ? '<span class="tag hold">Công bố</span> ' : ""}${esc(n.source)} · ${ago(n.ts)}</div>${n.desc ? `<div class="d">${esc(n.desc.slice(0, 220))}</div>` : ""}</a>`;
   }
   function renderNews() {
     const q = $("#newsQ").value.trim().toLowerCase();
-    const onlyWatch = $("#newsWatch").checked, wl = new Set(currentList());
+    const onlyWatch = $("#newsWatch").checked, wl = new Set(currentList()), onlyCb = $("#newsCbtt") && $("#newsCbtt").checked;
     const items = S.news.filter(n => (!q || (n.title + " " + n.desc).toLowerCase().includes(q) || n.tickers.includes(q.toUpperCase()))
-      && (!onlyWatch || n.tickers.some(t => wl.has(t))));
+      && (!onlyWatch || n.tickers.some(t => wl.has(t))) && (!onlyCb || n.cat === "cbtt"));
     $("#newsList").innerHTML = `<div class="card" style="padding:0">${items.slice(0, 150).map(newsHtml).join("") || `<p class="muted" style="padding:12px">Không có tin phù hợp.</p>`}</div>`;
   }
 
@@ -396,7 +470,7 @@
   $("#sym").addEventListener("keydown", e => { if (e.key === "Enter") viewSymbol($("#sym").value); });
   $$(".seg button").forEach(b => b.onclick = () => { $$(".seg button").forEach(x => x.classList.remove("active")); b.classList.add("active"); S.zoom = +b.dataset.z; drawChart(); });
   $("#showBB").onchange = () => { S.showBB = $("#showBB").checked; drawChart(); };
-  $("#newsQ").oninput = renderNews; $("#newsWatch").onchange = renderNews; $("#btnNews").onclick = loadNews;
+  $("#newsQ").oninput = renderNews; $("#newsWatch").onchange = renderNews; if ($("#newsCbtt")) $("#newsCbtt").onchange = renderNews; $("#btnNews").onclick = loadNews;
 
   tickClock(); setInterval(tickClock, 30000);
   window.VXT_APP = {

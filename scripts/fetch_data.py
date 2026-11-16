@@ -41,11 +41,39 @@ with ThreadPoolExecutor(max_workers=4) as ex:
             ok.append(sym)
             sources[src] = sources.get(src, 0) + 1
 
+# ---- Khối ngoại + cơ bản. Lịch sử khối ngoại được tích lũy qua từng lần chạy (đọc lại từ trang đã xuất bản). ----
+prev = {}
+repo = os.environ.get("GITHUB_REPOSITORY", "")
+if "/" in repo:
+    owner, name = repo.split("/", 1)
+    try:
+        prev = json.loads(server.http_get(f"https://{owner.lower()}.github.io/{name}/data/extra.json?t={int(time.time())}", timeout=20))
+    except Exception as e:  # noqa: BLE001
+        print("Chưa có extra.json cũ:", type(e).__name__)
+today_vn = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 7 * 3600))
+ft = server.foreign_today(syms)
+flow = server.merge_flow(prev.get("flow") or {}, ft)
+fund = prev.get("fund") or {}
+if prev.get("fund_date") != today_vn or not fund:
+    stocks = [s for s in syms if s not in server.INDEXES]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        got = dict(zip(stocks, ex.map(lambda x: server._safe(server.fundamentals, x), stocks)))
+    fund = {k: v for k, v in got.items() if v} or fund
+    fund_date = today_vn if got and any(got.values()) else prev.get("fund_date")
+else:
+    fund_date = prev.get("fund_date")
+extra = {"updated": int(time.time()), "flow": flow, "fund": fund, "fund_date": fund_date}
+with open(os.path.join(out, "data", "extra.json"), "w", encoding="utf-8") as f:
+    json.dump(extra, f, ensure_ascii=False, separators=(",", ":"))
+print(f"Khối ngoại hôm nay: {len(ft)} mã | lịch sử tối đa {max((v['days'] for v in flow.values()), default=0)} phiên | Cơ bản: {len(fund)} mã ({fund_date})")
+if "FPT" in fund:
+    print("  FPT:", fund["FPT"], flow.get("FPT", {}).get("today"))
+
 news = server.get_news()
 with open(os.path.join(out, "data", "news.json"), "w", encoding="utf-8") as f:
     json.dump(news, f, ensure_ascii=False, separators=(",", ":"))
 
-meta = {"updated": int(time.time()), "symbols": ok, "failed": errors, "sources": sources,
+meta = {"updated": int(time.time()), "symbols": ok, "foreign": len(ft), "fund": len(fund), "failed": errors, "sources": sources,
         "news": len(news.get("items", [])), "news_errors": news.get("errors", [])}
 with open(os.path.join(out, "data", "meta.json"), "w", encoding="utf-8") as f:
     json.dump(meta, f, ensure_ascii=False, indent=1)

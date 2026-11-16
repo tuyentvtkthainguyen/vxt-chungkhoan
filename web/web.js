@@ -152,6 +152,7 @@
       if (demo) { const now = Date.now() / 1000; return { items: DEMO_NEWS.map((t, i) => ({ title: "[MẪU] " + t, link: "https://cafef.vn", desc: "Tin mẫu để thử giao diện.", ts: now - i * 5400, source: "Mẫu" })), errors: [] }; }
       return { items: [], errors: ["Bản web không tải được tin trực tiếp"] };
     },
+    async getExtra() { return null; },
     listImported: () => [...DB.keys()].filter(k => !IDX.test(k)).sort(),
     onDetail(cur) { renderAI(cur); },
     init(app) {

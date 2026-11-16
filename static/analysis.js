@@ -111,31 +111,23 @@
   const maxOf = (a, s, e) => { let m = -Infinity; for (let i = s; i < e; i++) m = Math.max(m, a[i]); return m; };
   const minOf = (a, s, e) => { let m = Infinity; for (let i = s; i < e; i++) m = Math.min(m, a[i]); return m; };
 
-  function analyze(candles, opt = {}) {
-    const exch = opt.exchange || "HOSE";
-    const isIndex = !!opt.isIndex;
-    const n = candles.length;
-    if (n < 35) return { ok: false, reason: "Chưa đủ dữ liệu (cần ≥ 35 phiên)" };
-    const O = candles.map(x => x.o), H = candles.map(x => x.h), L = candles.map(x => x.l),
-      C = candles.map(x => x.c), V = candles.map(x => x.v);
-    const e20 = ema(C, 20), e50 = ema(C, 50), e200 = ema(C, 200);
-    const R = rsi(C, 14), M = macd(C), A = atr(H, L, C, 14), B = bollinger(C, 20, 2);
-    const vAvg = sma(V, 20);
-    const i = n - 1, p = i - 1;
-    const c = C[i], cp = C[p];
+
+  function buildCtx(candles) {
+    const H = candles.map(x => x.h), L = candles.map(x => x.l), C = candles.map(x => x.c), V = candles.map(x => x.v);
+    return { H, L, C, V, e20: ema(C, 20), e50: ema(C, 50), e200: ema(C, 200), R: rsi(C, 14), M: macd(C), A: atr(H, L, C, 14), B: bollinger(C, 20, 2), vAvg: sma(V, 20) };
+  }
+
+  /* Chấm điểm kỹ thuật tại phiên i (dùng cho cả phiên hiện tại và kiểm định lịch sử) */
+  function scoreAt(ctx, i, partial = 1, withText = false) {
+    const { H, L, C, V, e20, e50, e200, R, M, A, vAvg } = ctx;
+    const p = i - 1, c = C[i], chg = c - C[p];
     const a = A[i] || (H[i] - L[i]) || c * 0.02;
-    const chg = c - cp, chgPct = (chg / cp) * 100;
-    // Phiên đang diễn ra: ước tính khối lượng cả phiên theo thời gian đã giao dịch
-    const partial = opt.partial > 0 && opt.partial < 1 ? opt.partial : 1;
     const vNow = V[i] / Math.max(partial, 0.15);
     const volRatio = vAvg[p] ? vNow / vAvg[p] : 1;
-    const value20 = (() => { let s = 0, k = 0; for (let j = Math.max(0, n - 20); j < n; j++) { s += C[j] * V[j]; k++; } return s / k / 1e6; })(); // tỷ đồng
-    const hi20 = maxOf(H, Math.max(0, n - 21), n - 1), lo20 = minOf(L, Math.max(0, n - 21), n - 1);
-    const reasons = [], warns = [];
+    const hi20 = maxOf(H, Math.max(0, i - 20), i), lo20 = minOf(L, Math.max(0, i - 20), i);
+    const reasons = [];
     let score = 0;
-    const add = (pt, txt) => { score += pt; reasons.push({ pt, txt }); };
-
-    // 1. Xu hướng
+    const add = withText ? (pt, txt) => { score += pt; reasons.push({ pt, txt }); } : pt => { score += pt; };
     const trendUp = c > e20[i] && e20[i] > (e50[i] ?? -Infinity);
     const trendDown = e50[i] != null && c < e20[i] && e20[i] < e50[i];
     if (trendUp) add(2, "Xu hướng tăng: Giá > EMA20 > EMA50");
@@ -146,7 +138,6 @@
       if (c > e200[i]) add(1, "Trên EMA200 (xu hướng dài hạn tăng)");
       else add(-1, "Dưới EMA200 (xu hướng dài hạn yếu)");
     }
-    // 2. MACD
     const h0 = M.hist[i], h1 = M.hist[p];
     let crossUp = false, crossDn = false;
     for (let k = i; k > i - 3 && k > 0; k--) {
@@ -161,7 +152,6 @@
       if (h0 > 0 && h0 >= h1) add(1, "Động lượng MACD tăng");
       else if (h0 < 0 && h0 <= h1) add(-1, "Động lượng MACD giảm");
     }
-    // 3. RSI
     const r = R[i], rp = R[p];
     if (r != null) {
       if (r > 75) add(-1, `RSI ${r.toFixed(0)}: quá mua, dễ điều chỉnh`);
@@ -169,18 +159,112 @@
       else if (r < 30) add(1, `RSI ${r.toFixed(0)}: quá bán, có thể hồi kỹ thuật`);
       else if (r < 45 && r < rp) add(-1, `RSI ${r.toFixed(0)}: yếu, đang giảm`);
     }
-    // 4. Bứt phá / thủng nền
     const breakout = c > hi20 && volRatio >= 1.3;
     const breakdown = c < lo20;
     if (breakout) add(2, `Bứt phá đỉnh 20 phiên (${hi20.toFixed(2)}) kèm khối lượng`);
     else if (c > hi20) add(1, "Vượt đỉnh 20 phiên nhưng khối lượng chưa xác nhận");
     if (breakdown) add(-2, `Thủng đáy 20 phiên (${lo20.toFixed(2)})`);
-    // 5. Khối lượng
     if (volRatio >= 1.5 && chg > 0 && !breakout) add(1, `Khối lượng gấp ${volRatio.toFixed(1)} lần TB20, giá tăng`);
     if (volRatio >= 1.5 && chg < 0) add(-1, `Bán mạnh: khối lượng gấp ${volRatio.toFixed(1)} lần TB20`);
-    // 6. Không mua đuổi
     const stretch = (c - e20[i]) / a;
     if (stretch > 2.5) add(-1, `Giá đã cách EMA20 ${stretch.toFixed(1)} ATR, tránh mua đuổi`);
+    return { score, reasons, trendUp, crossUp, crossDn, breakout, breakdown, volRatio, hi20, lo20, r, h0, a };
+  }
+
+  const clsOf = sc => sc >= 5 ? "buy" : sc >= 3 ? "buy2" : sc <= -3 ? "sell" : "hold";
+
+  /* Kiểm định lịch sử: những lần trước điểm kỹ thuật giống hiện tại thì sau 5/10/20 phiên giá ra sao.
+     Mua tại giá đóng cửa phiên có tín hiệu. Không tính phí, thuế, trượt giá. */
+  function backtest(candles, curScore) {
+    const n = candles.length;
+    if (n < 120) return null;
+    const ctx = buildCtx(candles), C = ctx.C, H = ctx.H, L = ctx.L;
+    const HZ = [5, 10, 20], start = 60;
+    const scores = new Array(n).fill(null);
+    for (let i = start; i < n; i++) scores[i] = scoreAt(ctx, i).score;
+    const curCls = clsOf(curScore);
+    const mk = () => ({ n: 0, up: 0, sum: 0, rets: [] });
+    const same = HZ.map(mk), base = HZ.map(mk);
+    let tpN = 0, tpHit = 0, slHit = 0, last = -99;
+    for (let i = start; i < n - 1; i++) {
+      const similar = Math.abs(scores[i] - curScore) <= 1 && clsOf(scores[i]) === curCls;
+      HZ.forEach((h, k) => {
+        if (i + h >= n) return;
+        const ret = C[i + h] / C[i] - 1;
+        const b = base[k]; b.n++; b.sum += ret; if (ret > 0) b.up++;
+        if (similar && i - last >= 3) { const s = same[k]; s.n++; s.sum += ret; if (ret > 0) s.up++; s.rets.push(ret); }
+      });
+      // Mô phỏng lệnh: cắt lỗ 2×ATR (tối đa 8%), mục tiêu 1,5R, giữ tối đa 20 phiên
+      if (similar && i - last >= 3 && i + 1 < n) {
+        const a = ctx.A[i] || C[i] * 0.02;
+        const stop = Math.max(C[i] - 2 * a, C[i] * 0.92), tp = C[i] + 1.5 * (C[i] - stop);
+        let res = 0;
+        for (let j = i + 1; j < Math.min(n, i + 21); j++) {
+          if (L[j] <= stop) { res = -1; break; }
+          if (H[j] >= tp) { res = 1; break; }
+        }
+        if (i + 20 < n || res !== 0) { tpN++; if (res === 1) tpHit++; if (res === -1) slHit++; }
+      }
+      if (similar) last = i;
+    }
+    const fin = arr => arr.map((s, k) => {
+      const med = s.rets ? (s.rets.sort((x, y) => x - y)[s.rets.length >> 1] ?? null) : null;
+      return { h: HZ[k], n: s.n, upPct: s.n ? (s.up / s.n) * 100 : null, avgPct: s.n ? (s.sum / s.n) * 100 : null, medPct: med != null ? med * 100 : null };
+    });
+    return {
+      curCls, same: fin(same), base: fin(base),
+      trade: { n: tpN, tpPct: tpN ? (tpHit / tpN) * 100 : null, slPct: tpN ? (slHit / tpN) * 100 : null },
+      bars: n - start,
+    };
+  }
+
+  /* Điểm cộng/trừ từ dữ liệu khối ngoại và cơ bản (khi nguồn có dữ liệu).
+     x = { flow: {net5, days, today:{net}}, fund: {pe, npGrowth, roe} }, value20 = GTGD TB 20 phiên (tỷ) */
+  function extraScore(x, add, warns, value20) {
+    const f = x.flow;
+    if (f && value20 > 0) {
+      const days = f.days || 0;
+      const net = days >= 3 ? f.net5 : f.today ? f.today.net : null;
+      const lbl = days >= 3 ? `${Math.min(days, 5)} phiên` : "phiên gần nhất";
+      if (net != null) {
+        const k = net / value20; // so với GTGD trung bình một phiên
+        const lim = days >= 3 ? 0.3 : 0.1;
+        if (k >= lim) add(1, `Khối ngoại mua ròng ${lbl}: ${net.toFixed(1)} tỷ`);
+        else if (k <= -lim) add(-1, `Khối ngoại bán ròng ${lbl}: ${net.toFixed(1)} tỷ`);
+      }
+    }
+    const fu = x.fund;
+    if (fu) {
+      if (fu.pe != null && fu.pe < 0) warns.push("Doanh nghiệp đang lỗ 4 quý gần nhất (P/E âm)");
+      if (fu.npGrowth != null) {
+        if (fu.npGrowth >= 20) add(1, `LNST 4 quý tăng ${fu.npGrowth.toFixed(0)}% so với cùng kỳ (${fu.q})`);
+        else if (fu.npGrowth <= -20) add(-1, `LNST 4 quý giảm ${Math.abs(fu.npGrowth).toFixed(0)}% so với cùng kỳ (${fu.q})`);
+      }
+      if (fu.roe != null && fu.roe >= 20 && fu.pe != null && fu.pe > 0 && fu.pe < 15) add(1, `ROE ${fu.roe.toFixed(0)}%, P/E ${fu.pe.toFixed(1)}: hiệu quả cao, định giá hợp lý`);
+    }
+  }
+
+  function analyze(candles, opt = {}) {
+    const exch = opt.exchange || "HOSE";
+    const isIndex = !!opt.isIndex;
+    const n = candles.length;
+    if (n < 35) return { ok: false, reason: "Chưa đủ dữ liệu (cần ≥ 35 phiên)" };
+    const O = candles.map(x => x.o), H = candles.map(x => x.h), L = candles.map(x => x.l),
+      C = candles.map(x => x.c), V = candles.map(x => x.v);
+    const ctx = buildCtx(candles);
+    const { e20, e50, e200, R, M, A, B, V: Vv } = ctx;
+    const i = n - 1, p = i - 1;
+    const c = C[i], cp = C[p];
+    const chg = c - cp, chgPct = (chg / cp) * 100;
+    const partial = opt.partial > 0 && opt.partial < 1 ? opt.partial : 1;
+    const value20 = (() => { let s = 0, k = 0; for (let j = Math.max(0, n - 20); j < n; j++) { s += C[j] * V[j]; k++; } return s / k / 1e6; })(); // tỷ đồng
+    const sc = scoreAt(ctx, i, partial, true);
+    const { reasons, trendUp, crossDn, breakout, breakdown, volRatio, hi20, lo20, r, h0, a } = sc;
+    let score = sc.score;
+    const warns = [];
+    const add = (pt, txt) => { score += pt; reasons.push({ pt, txt }); };
+    // Dòng tiền / cơ bản (nếu có dữ liệu ngoài)
+    if (opt.extra) extraScore(opt.extra, add, warns, value20);
     // Thanh khoản
     if (!isIndex && value20 < 3) warns.push(`Thanh khoản thấp (${value20.toFixed(1)} tỷ/phiên), khó mua bán khối lượng lớn`);
     if (partial < 1) warns.push(`Phiên đang diễn ra (${Math.round(partial * 100)}% thời gian): khối lượng là ước tính cả phiên, tín hiệu chốt khi đóng cửa`);
@@ -243,12 +327,12 @@
       ok: true, last: c, chg, chgPct, open: O[i], high: H[i], low: L[i], vol: V[i],
       ema20: e20[i], ema50: e50[i], ema200: e200[i], rsi: r, macd: M.line[i], macdSig: M.signal[i], hist: h0,
       atr: a, atrPct: (a / c) * 100, volRatio, value20, hi20, lo20,
-      score, signal, cls, reasons, warns, plan, trigger, exits, trail, supports, resist,
+      score, techScore: sc.score, signal, cls, reasons, warns, plan, trigger, exits, trail, supports, resist,
       series: { e20, e50, e200, rsi: R, macd: M, bb: B },
     };
   }
 
-  const API = { ema, sma, rsi, macd, atr, bollinger, pivots, tick, roundTick, analyze };
+  const API = { ema, sma, rsi, macd, atr, bollinger, pivots, tick, roundTick, analyze, backtest, scoreAt, buildCtx };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   else root.TA = API;
 })(this);

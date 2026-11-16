@@ -30,6 +30,9 @@
         throw new Error("Mã chưa có trong watchlist.txt của kho GitHub");
       }
     },
+    async getExtra() {
+      try { return await get("data/extra.json"); } catch (e) { return null; }
+    },
     async getNews() {
       try { return await get("data/news.json"); } catch (e) { return { items: [], errors: ["Chưa có dữ liệu tin"] }; }
     },
