@@ -1,37 +1,26 @@
-"""Dò thử các nguồn dữ liệu (chạy trong GitHub Actions) - in mã trạng thái và đoạn đầu phản hồi."""
+"""Dò cấu trúc dữ liệu (chạy trong GitHub Actions)."""
 import json, sys, time, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server
-now = int(time.time()); d = time.strftime("%Y-%m-%d", time.gmtime(now - 60*86400)); t = time.strftime("%Y-%m-%d")
-dmy0 = time.strftime("%d/%m/%Y", time.gmtime(now - 60*86400)); dmy1 = time.strftime("%d/%m/%Y")
-C = [
- ("cafef_ngoai_sym", f"https://s.cafef.vn/Ajax/PageNew/DataHistory/GDKhoiNgoai.ashx?symbol=FPT&StartDate={dmy0}&EndDate={dmy1}&PageIndex=1&PageSize=3", "https://s.cafef.vn/"),
- ("cafef_ngoai_all", f"https://s.cafef.vn/Ajax/PageNew/DataHistory/GDKhoiNgoai.ashx?Symbol=&StartDate={dmy1}&EndDate={dmy1}&PageIndex=1&PageSize=3", "https://s.cafef.vn/"),
- ("cafef_tudoanh_sym", f"https://s.cafef.vn/Ajax/PageNew/DataHistory/GDTuDoanh.ashx?symbol=FPT&StartDate={dmy0}&EndDate={dmy1}&PageIndex=1&PageSize=3", "https://s.cafef.vn/"),
- ("cafef_tudoanh_all", f"https://s.cafef.vn/Ajax/PageNew/DataHistory/GDTuDoanh.ashx?symbol=all&StartDate={dmy0}&EndDate={dmy1}&PageIndex=1&PageSize=3", "https://s.cafef.vn/"),
- ("cafef_price", f"https://s.cafef.vn/Ajax/PageNew/DataHistory/PriceHistory.ashx?Symbol=FPT&StartDate={dmy0}&EndDate={dmy1}&PageIndex=1&PageSize=2", "https://s.cafef.vn/"),
- ("tcbs_ext_overview", "https://apiextaws.tcbs.com.vn/tcanalysis/v1/ticker/FPT/overview", "https://tcinvest.tcbs.com.vn/"),
- ("tcbs_ext_ratio", "https://apiextaws.tcbs.com.vn/tcanalysis/v1/finance/FPT/financialratio?yearly=0&isAll=false", "https://tcinvest.tcbs.com.vn/"),
- ("tcbs_ext_info", "https://apiextaws.tcbs.com.vn/tcanalysis/v1/ticker/FPT/stockratio", "https://tcinvest.tcbs.com.vn/"),
- ("kbs_ratio", "https://kbbuddywts.kbsec.com.vn/iis-server/investment/stockinfo/profile/FPT?l=1", "https://kbbuddy.kbsec.com.vn/"),
- ("kbs_snap", "https://kbbuddywts.kbsec.com.vn/iis-server/investment/stock/search/data", "https://kbbuddy.kbsec.com.vn/"),
- ("vci_stat", "https://iq.vietcap.com.vn/api/iq-insight-service/v1/company/FPT/statistics-financial", "https://trading.vietcap.com.vn/"),
- ("vci_ratio", "https://iq.vietcap.com.vn/api/iq-insight-service/v1/company/FPT/financial-statement/metrics", "https://trading.vietcap.com.vn/"),
- ("ssi_stock", "https://iboard-query.ssi.com.vn/stock/FPT", "https://iboard.ssi.com.vn/"),
- ("ssi_group", "https://iboard-query.ssi.com.vn/stock/group/VN30", "https://iboard.ssi.com.vn/"),
- ("cafef_cs", "https://s.cafef.vn/Ajax/PageNew/ChiSoTaiChinh.ashx?symbol=FPT", "https://s.cafef.vn/"),
- ("cafef_ctck", "https://cafef.vn/du-lieu/Ajax/PageNew/FinanceRatio.ashx?Symbol=FPT", "https://cafef.vn/"),
- ("vs_cotuc", "https://vietstock.vn/738/chung-khoan/co-tuc.rss", None),
- ("vs_lich", "https://vietstock.vn/1636/chung-khoan/lich-su-kien.rss", None),
- ("vs_bctc", "https://vietstock.vn/737/doanh-nghiep/hoat-dong-kinh-doanh.rss", None),
- ("vs_kqkd", "https://vietstock.vn/4223/doanh-nghiep/ket-qua-kinh-doanh.rss", None),
- ("hose_news", "https://www.hsx.vn/Modules/CMS/Web/LoadArticles?exclude=00000000-0000-0000-0000-000000000000&id=0b4fd640-8aba-4aac-8d51-3a8a1d5a7c3c&pageFieldName1=FromDate&pageFieldValue1=&pageFieldOperator1=eq&pageCriteriaLength=0&_search=false&rows=5&page=1", "https://www.hsx.vn/"),
-]
-for name, url, ref in C:
+now = int(time.time())
+dmy = lambda d: time.strftime("%d/%m/%Y", time.gmtime(now - d*86400))
+def J(url, ref): return json.loads(server.http_get(url, timeout=25, referer=ref))
+try:
+    d = J("https://iq.vietcap.com.vn/api/iq-insight-service/v1/company/FPT/statistics-financial", "https://trading.vietcap.com.vn/")["data"]
+    print("### VCI n=", len(d), "last keys/values:", json.dumps(d[-1])[:2500])
+    print("### VCI order:", [(x.get("yearReport"), x.get("quarter")) for x in d[-6:]])
+except Exception as e: print("### VCI FAIL", e)
+try:
+    d = J("https://iboard-query.ssi.com.vn/stock/group/VN30", "https://iboard.ssi.com.vn/")["data"][0]
+    print("### SSI keys:", json.dumps({k: v for k, v in d.items() if "oreign" in k or k in ("matchedPrice","nmTotalTradedQty","nmTotalTradedValue","stockSymbol","lastMatchedPrice")}))
+except Exception as e: print("### SSI FAIL", e)
+for ps in (5000,):
     try:
-        raw = server.http_get(url, timeout=15, referer=ref)
-        txt = raw.decode("utf-8", "replace")
-        print(f"### {name} OK {len(raw)}B :: {txt[:900]!r}")
-    except Exception as e:
-        code = getattr(e, "code", "")
-        print(f"### {name} FAIL {type(e).__name__} {code} {str(e)[:120]}")
+        t=time.time(); d = J(f"https://s.cafef.vn/Ajax/PageNew/DataHistory/GDKhoiNgoai.ashx?Symbol=FPT&StartDate={dmy(35)}&EndDate={dmy(0)}&PageIndex=1&PageSize={ps}", "https://s.cafef.vn/")["Data"]
+        rows = d["Data"]; dates = sorted({r["Ngay"] for r in rows})
+        print(f"### CAFEF ps={ps} total={d['TotalCount']} got={len(rows)} dates={dates[:3]}..{dates[-3:]} n_dates={len(dates)} t={time.time()-t:.1f}s fpt={[r for r in rows if r['Symbol']=='FPT'][:2]}")
+    except Exception as e: print("### CAFEF FAIL", e)
+for q in ("symbol=FPT&type=0", "Symbol=FPT&Type=1", "symbol=FPT&PageIndex=1&PageSize=3&StartDate=&EndDate="):
+    try:
+        print("### TD", q, server.http_get("https://s.cafef.vn/Ajax/PageNew/DataHistory/GDTuDoanh.ashx?"+q, timeout=15, referer="https://s.cafef.vn/")[:300])
+    except Exception as e: print("### TD FAIL", q, e)
