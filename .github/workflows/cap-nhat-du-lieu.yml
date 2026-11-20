@@ -2,8 +2,7 @@ name: Cập nhật dữ liệu & xuất bản trang
 
 on:
   schedule:
-    # Giờ UTC. 02:00–08:00 UTC = 9:00–15:00 giờ VN, thứ 2 – thứ 6, mỗi 15 phút
-    - cron: "*/15 2-8 * * 1-5"
+    # Bản trang đầy đủ sau giờ đóng cửa; trong phiên do workflow "Theo dõi trong phiên" cập nhật nhánh data
     # Sau giờ đóng cửa (16:30 VN) và cuối tuần để có dữ liệu chốt phiên
     - cron: "30 9 * * 1-5"
     - cron: "0 3 * * 6"

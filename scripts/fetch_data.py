@@ -44,7 +44,18 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 # ---- Khối ngoại + cơ bản. Lịch sử khối ngoại được tích lũy qua từng lần chạy (đọc lại từ trang đã xuất bản). ----
 prev = {}
 repo = os.environ.get("GITHUB_REPOSITORY", "")
-if "/" in repo:
+local_prev = os.path.join(out, "data", "extra.json")
+if os.path.exists(local_prev):  # lượt trước trong cùng phiên theo dõi
+    try:
+        prev = json.load(open(local_prev, encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        prev = {}
+if not prev and "/" in repo:  # nhánh data (mới nhất) rồi tới trang đã xuất bản
+    try:
+        prev = json.loads(server.http_get(f"https://raw.githubusercontent.com/{repo}/data/data/extra.json?t={int(time.time())}", timeout=20))
+    except Exception as e:  # noqa: BLE001
+        print("Chưa có extra.json trên nhánh data:", type(e).__name__)
+if not prev and "/" in repo:
     owner, name = repo.split("/", 1)
     try:
         prev = json.loads(server.http_get(f"https://{owner.lower()}.github.io/{name}/data/extra.json?t={int(time.time())}", timeout=20))

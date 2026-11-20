@@ -1,0 +1,48 @@
+name: Theo dõi trong phiên (10 phút/lần)
+# Lịch 15 phút của GitHub hay bị bỏ qua, nên dùng 1 lượt chạy dài suốt phiên:
+# bắt đầu ~8:50 sáng giờ VN, cứ 10 phút lấy dữ liệu và đẩy lên nhánh "data" cho trang đọc, dừng sau 15:05.
+# Các lịch dự phòng chỉ chạy tiếp nếu lượt chính bị bỏ lỡ (cùng nhóm concurrency, tự thoát khi hết giờ).
+on:
+  schedule:
+    - cron: "50 1 * * 1-5"
+    - cron: "40 3 * * 1-5"
+    - cron: "10 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mot_lan:
+        description: "Chạy 1 lượt ngay (kể cả ngoài giờ)"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: theo-doi-trong-phien
+  cancel-in-progress: false
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Lấy dữ liệu mỗi 10 phút trong giờ giao dịch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          mkdir -p out
+          while true; do
+            HM=$(TZ=Asia/Ho_Chi_Minh date +%H%M)
+            ONCE="${{ inputs.mot_lan }}"
+            if [ "$ONCE" != "true" ] && [ "$HM" -gt 1505 ]; then echo "Hết giờ giao dịch ($HM)"; break; fi
+            if [ "$ONCE" = "true" ] || [ "$HM" -ge 0855 ]; then
+              python scripts/fetch_data.py out || echo "Lượt lỗi, thử lại sau"
+              rm -rf pub && mkdir pub && cp -r out/data pub/ && cd pub
+              git init -q -b data && git add -A && git commit -qm "Dữ liệu $(TZ=Asia/Ho_Chi_Minh date '+%d/%m %H:%M')"
+              git push -qf "$URL" data || echo "Đẩy dữ liệu lỗi"
+              cd ..
+            fi
+            [ "$ONCE" = "true" ] && break
+            sleep 600
+          done
