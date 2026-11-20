@@ -55,7 +55,7 @@
     init(app) {
       app.setDemo(false);
       const sw = document.querySelector(".switch"); if (sw) sw.style.display = "none";
-      loadMeta().then(() => { app.renderTable(); });
+      loadMeta().then(() => { const pr = document.querySelector("#preset"); if (pr && pr.value === "Toàn bộ watchlist (GitHub)") app.scan(); else app.renderTable(); });
       setInterval(loadMeta, 3 * 60000);
     },
   };
